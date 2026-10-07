@@ -27,5 +27,7 @@ git push origin master
 git tag -a -m "your message" v1.0.0 // create tag
 git push origin v1.0.0 //push tag
 
+keytool -list -v -keystore /home/mobicule/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+
 
 
