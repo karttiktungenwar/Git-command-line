@@ -1,0 +1,67 @@
+Business Requirement Document (BRD)
+Executive Summary & Overview
+Project Name: ReadNEarn
+
+Target Platforms: Android & iOS (Flutter)
+
+Core Value Proposition: ReadNEarn is a reward-based news aggregation app. Users can browse top headlines fetched via NewsAPI, filter content by parameters (country, category, language, search term), view full news, watch rewarded video ads (Google AdMob) to earn digital coins, and maintain a secure balance ledger. Guest access allows instant news browsing without authentication, while login is optional and only required to save and claim coin rewards.
+
+Technical Architecture & Tech Stack
+Framework: Flutter (Dart) — Cross-platform Android & iOS
+
+Authentication: Firebase Authentication (Google Sign-In) — Optional / Frictionless Mode
+
+Local Storage & Security: Hive DB with AES-256 encryption using Flutter Secure Storage for key derivation
+
+Monetization & Ads: Google Mobile Ads SDK (google_mobile_ads) — AdMob Banner at bottom, AdMob Rewarded Video for coin grants
+
+API Integration: NewsAPI ([https://newsapi.org/v2/top-headlines](https://newsapi.org/v2/top-headlines))
+
+User Flow & Core Features
+1. Splash Screen & Guest-First Entry Strategy
+Behavior: Checks active session on launch.
+
+Flow: Directs all users (Authenticated & Guests) straight to the News Feed for immediate engagement.
+
+Guest State: Users can browse all news, apply filters, and search without any sign-in popups.
+
+Auth Prompt Trigger: When a guest user attempts to click "Watch Video to Earn Coins" or access the Rewards Profile, an inline auth sheet prompts Google Sign-In to unlock rewards.
+
+2. News Feed & Multi-Parameter Filter System
+Data Source: NewsAPI v2/top-headlines
+
+Filter Capabilities & Constraints:
+
+Country Filter: ISO 3166-1 codes (us, in, gb, etc.).
+
+Category Filter: business, entertainment, general, health, science, sports, technology.
+
+Language Filter: ISO 639-1 (en, es, fr, etc.).
+
+Search (q): Term-based keyword search.
+
+Strict NewsAPI Business Rule: sources cannot be combined with country or category. The UI enforces either Country/Category mode OR Source mode to prevent HTTP 400 Bad Request responses.
+
+3. Bottom Banner & Rewarded Video Integration
+Bottom Banner: Static/Sticky AdMob banner docked at the bottom of the News Feed screen (visible to all users).
+
+Rewarded Video Trigger: On the news detail screen, users tap "Watch Video to Claim Reward".
+
+If Logged In: Rewarded video plays immediately.
+
+If Guest User: Triggers a bottom sheet: "Sign in with Google to store your earned coins safely."
+
+Reward Mechanism: Upon full completion of the video (onUserEarnedReward), coins are credited to the user's ledger.
+
+4. Coin Reward Engine & Secure Hive Storage
+Reward Rule: Fixed reward per completed video (e.g., +10 coins).
+
+Storage Schema (Hive Encrypted Box):
+
+userId: String (Firebase UID)
+
+totalCoins: Integer
+
+transactions: List of Objects [{ transactionId, timestamp, rewardCoins, videoAdUnitId }]
+
+Security: Hive box encrypted with a 256-bit key stored in FlutterSecureStorage (Keychain on iOS / KeyStore on Android).
