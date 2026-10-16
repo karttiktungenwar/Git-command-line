@@ -29,5 +29,11 @@ git push origin v1.0.0 //push tag
 
 keytool -list -v -keystore /home/mobicule/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
 
+For just creating a build-
+flutter build apk --release --flavor tpfuat --dart-define-from-file=secrets.json
+
+For running the apk as well as creating a build - 
+flutter run --release --flavor tpfuat --dart-define-from-file=secrets.json
+
 
 
