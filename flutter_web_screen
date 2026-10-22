@@ -1,0 +1,328 @@
+import 'package:comfort_point_and_spot_appreciation/src/core/extension/build_context_extension.dart';
+import 'package:comfort_point_and_spot_appreciation/src/features/navigation_ui/presentation/comfort_point_ui_resolver.dart';
+import 'package:comfort_point_and_spot_appreciation/src/features/pitch_monster/domain/entities/response/pitch_dashboard_data_resp_entity.dart';
+import 'package:comfort_point_and_spot_appreciation/src/features/pitch_monster/presentation/widgets/language_badge_widget.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+
+import '../../../navigation_ui/domain/value_objects/neeti_comfort_point_app_bar_config.dart';
+
+class SalePitchCoachWebScreen extends StatefulWidget {
+  final String languageBadge;
+  final String languageCode;
+  final ScriptEntity script;
+
+  const SalePitchCoachWebScreen({
+    super.key,
+    required this.languageBadge,
+    required this.script,
+    required this.languageCode,
+  });
+
+  @override
+  State<SalePitchCoachWebScreen> createState() =>
+      _SalePitchCoachWebScreenState();
+}
+
+class _SalePitchCoachWebScreenState extends State<SalePitchCoachWebScreen> with WidgetsBindingObserver {
+  late final WebViewController _controller;
+
+  final ValueNotifier<int> _loadingProgress = ValueNotifier<int>(0);
+  final ValueNotifier<bool> _hasError = ValueNotifier<bool>(false);
+  final ValueNotifier<String> _errorMessage = ValueNotifier<String>('');
+
+  bool _isPermissionDialogShowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    _initWebViewController();
+
+    // Run permission check after the first frame completes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestAppPermissions();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _loadingProgress.dispose();
+    _hasError.dispose();
+    _errorMessage.dispose();
+    super.dispose();
+  }
+
+  // Automatically re-check permissions when app resumes from native settings
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _requestAppPermissions();
+    }
+  }
+
+  /// Force System Level Permissions (Android & iOS)
+  Future<void> _requestAppPermissions() async {
+    // 1. Check current status first to avoid requesting if restricted
+    PermissionStatus cameraStatus = await Permission.camera.status;
+    PermissionStatus micStatus = await Permission.microphone.status;
+
+    // Direct user to App Settings if either permission is permanently denied
+    if (cameraStatus.isPermanentlyDenied || micStatus.isPermanentlyDenied) {
+      if (!_isPermissionDialogShowing && mounted) {
+        _showMandatoryPermissionDialog(
+          isPermanentlyDenied: true,
+        );
+      }
+      return;
+    }
+
+    // 2. Request permission if not granted and not restricted
+    Map<Permission, PermissionStatus> statuses = {};
+
+    if (!cameraStatus.isGranted && !cameraStatus.isRestricted) {
+      statuses[Permission.camera] = await Permission.camera.request();
+    } else {
+      statuses[Permission.camera] = cameraStatus;
+    }
+
+    if (!micStatus.isGranted && !micStatus.isRestricted) {
+      statuses[Permission.microphone] = await Permission.microphone.request();
+    } else {
+      statuses[Permission.microphone] = micStatus;
+    }
+
+    // 3. Verify if all required permissions are active
+    bool allGranted = statuses[Permission.camera]!.isGranted &&
+        statuses[Permission.microphone]!.isGranted;
+
+    if (allGranted) {
+      if (_isPermissionDialogShowing && mounted) {
+        _isPermissionDialogShowing = false;
+      }
+      return;
+    }
+
+    // 4. Show mandatory dialog if still not granted or restricted
+    if (!_isPermissionDialogShowing && mounted) {
+      _showMandatoryPermissionDialog(
+        isPermanentlyDenied: statuses.values.any((s) => s.isPermanentlyDenied),
+      );
+    }
+  }
+
+  void _showMandatoryPermissionDialog({bool isPermanentlyDenied = false}) {
+    _isPermissionDialogShowing = true;
+    context.showDailog(
+      message: isPermanentlyDenied
+          ? 'Camera and Microphone permissions are disabled in settings. Please enable them to continue.'
+          : 'Camera and Microphone access are required to record your sales pitch. Please grant permissions.',
+      actionLable: isPermanentlyDenied ? 'Open Settings' : 'Allow',
+      cancelLabel: 'Cancel',
+      onTap: () async {
+        _isPermissionDialogShowing = false;
+
+        if (isPermanentlyDenied) {
+          await openAppSettings();
+        } else {
+          await _requestAppPermissions();
+        }
+      },
+      onTapCancel: () {
+        _isPermissionDialogShowing = false;
+        context.pop(true);
+      },
+    );
+  }
+
+  void _initWebViewController() {
+    final controller = WebViewController();
+
+    controller
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.transparent)
+      ..enableZoom(true)
+      ..setUserAgent(
+        'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            _loadingProgress.value = progress;
+          },
+          onPageStarted: (String url) {
+            _hasError.value = false;
+            _errorMessage.value = '';
+            _loadingProgress.value = 0;
+          },
+          onPageFinished: (String url) {
+            _loadingProgress.value = 100;
+          },
+          onWebResourceError: (WebResourceError error) {
+            final isMainFrame = error.isForMainFrame ?? true;
+            if (!isMainFrame) return;
+
+            _errorMessage.value = 'Web resource error: ${error.description}';
+            _hasError.value = true;
+          },
+          onHttpError: (HttpResponseError error) {
+            final statusCode = error.response?.statusCode;
+            if (statusCode != null && statusCode >= 400) {
+              _errorMessage.value = 'Server returned status code: $statusCode';
+              _hasError.value = true;
+            }
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            final uri = Uri.parse(request.url);
+            if (uri.scheme == 'https' || uri.scheme == 'http') {
+              return NavigationDecision.navigate;
+            }
+            if (request.url.startsWith('mailto:')) {
+              _launchExternalUrl(request.url);
+              return NavigationDecision.prevent;
+            }
+            if (request.url.startsWith('tel:')) {
+              _launchExternalUrl(request.url);
+              return NavigationDecision.prevent;
+            }
+            _launchExternalUrl(request.url);
+            return NavigationDecision.prevent;
+          },
+        ),
+      );
+
+    // Grant Web-level permissions on Android (WebRTC / getUserMedia support)
+    if (controller.platform is AndroidWebViewController) {
+      final androidController = controller.platform as AndroidWebViewController;
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      androidController.setOnPlatformPermissionRequest((request) {
+        request.grant();
+      });
+    }
+
+    controller.loadRequest(Uri.parse(widget.script.scriptLink));
+    _controller = controller;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    final String? currentUrl = await _controller.currentUrl();
+    final String url = currentUrl?.toLowerCase() ?? '';
+
+    bool shouldForceExit = url.contains('login') || url.contains('sign-up');
+
+    if (await _controller.canGoBack() && !shouldForceExit) {
+      await _controller.goBack();
+    } else {
+      if (mounted) {
+        context.showDailog(
+          message: 'Are you sure you want to go back?',
+          actionLable: 'Yes, Exit',
+          cancelLabel: 'Cancel',
+          onTap: () => context.pop(true),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBackNavigation();
+      },
+      child: Scaffold(
+        appBar: ComfortPointUiResolver.resolveAppBar(
+          context,
+          NeetiComfortPointAppBarConfig(
+            title: 'Sales Pitch Coach',
+            actions: [
+              LanguageBadgeWidget(
+                languageBadge: widget.languageBadge,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: Stack(
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: _hasError,
+                builder: (context, hasError, child) {
+                  if (hasError) {
+                    return _buildErrorWidget();
+                  }
+                  return WebViewWidget(
+                    gestureRecognizers: {
+                      Factory<VerticalDragGestureRecognizer>(
+                        () => VerticalDragGestureRecognizer(),
+                      ),
+                    },
+                    controller: _controller,
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 60),
+            const SizedBox(height: 16),
+            const Text(
+              'Failed to load web page',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<String>(
+              valueListenable: _errorMessage,
+              builder: (context, message, child) {
+                return Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                _hasError.value = false;
+                _controller.reload();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchExternalUrl(String urlString) async {
+    final uri = Uri.parse(urlString);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint('Could not launch $urlString');
+    }
+  }
+}
