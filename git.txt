@@ -39,6 +39,13 @@ For just creating a appbuild-
 flutter build appbundle --release --obfuscate --split-debug-info=build/symbols
 https://lnkd.in/p/dTA7hqBf
 
+//Hybrid Composition++ (HCPP) is Flutter’s newest platform view architecture (introduced in Flutter 3.44 and refined in Flutter 3.50) for embedding native Android views—such as Google Maps, WebView, ads, and camera previews—inside a Flutter widget tree without scroll tearing, frame drops, or input glitche
+flutter run --enable-hcpp
+<meta-data
+    android:name="io.flutter.embedding.android.EnableHcpp"
+    android:value="true" />
+
+
 
 https://transform.tools/
 https://roadmap.sh/
